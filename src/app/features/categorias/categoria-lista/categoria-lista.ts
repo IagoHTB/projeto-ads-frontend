@@ -1,6 +1,6 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CategoriaForm } from '../categoria-form/categoria-form';
-import { Categoria, TipoCategoria } from '../../../models/categoria.model';
+import { Categoria, CategoriaInput } from '../../../models/categoria.model';
 import { CategoriaService } from '../../../core/services/categoria.service';
 
 @Component({
@@ -9,34 +9,85 @@ import { CategoriaService } from '../../../core/services/categoria.service';
   styleUrl: './categoria-lista.css',
   templateUrl: './categoria-lista.html',
 })
-export class CategoriaLista {
-  private readonly categoriaService = new CategoriaService();
-  categoriaSelecionada = signal<Categoria | null>(null);
-  filtro = signal<TipoCategoria | 'TODOS'>('TODOS');
+export class CategoriaLista implements OnInit {
+  categorias = signal<Categoria[]>([]);
+  erro = "";
+  carregado = false;
+  filtroTipo = signal<'TODOS' | 'RECEITA' | 'DESPESA'>('TODOS');
+  categoriaSelecionada: Categoria | null = null;
 
-  categorias = computed(() => {
-    const tipo = this.filtro();
-    const lista = this.categoriaService.listar();
-    return tipo === 'TODOS' ? lista : lista.filter(categoria => categoria.tipo === tipo);
-  });
+  constructor(private categoriaService: CategoriaService) {}
 
-  atualizarFiltro(event: Event): void {
-    const valor = (event.target as HTMLSelectElement).value as TipoCategoria | 'TODOS';
-    this.filtro.set(valor);
+  ngOnInit(): void {
+    this.carregarCategorias();
+  }
+
+  carregarCategorias(): void {
+    this.carregado = true;
+    this.erro = "";
+    console.log("Estou carregando categorias!!")
+    this.categoriaService.listar().subscribe({
+      next: dados => {
+        this.categorias.set(dados);
+        console.log("Carreguei a categoria!");
+        console.log(this.categorias());
+        this.carregado = false;
+      },
+      error: erro => {
+        this.carregado = false;
+        this.erro = "Falha ao carregar categorias";
+        console.log(erro);
+      }
+    })
   }
 
   editar(categoria: Categoria): void {
-    this.categoriaSelecionada.set(categoria);
+    this.categoriaSelecionada = { ...categoria };
   }
 
   aoSalvar(): void {
-    this.categoriaSelecionada.set(null);
+    this.categoriaSelecionada = null;
+    this.carregarCategorias();
   }
 
-  alternarSituacao(categoria: Categoria): void {
-    const atualizada = this.categoriaService.alterarSituacao(categoria.id);
-    if (atualizada) {
-      this.categoriaSelecionada.set(null);
-    }
+  aoCancelar(): void {
+    this.categoriaSelecionada = null;
   }
+
+  alterarSituacao(categoria: Categoria): void {
+    const dados: CategoriaInput = {
+      descricao: categoria.descricao,
+      tipo: categoria.tipo,
+      ativa: !categoria.ativa
+    }
+    this.categoriaService
+      .atualizar(categoria.id,dados)
+      .subscribe({
+        next: ()=>this.carregarCategorias(),
+        error: erro => {
+          this.erro = 'Não foi possível atualizar a situação,';
+          console.error(erro);
+        }
+      });
+  }
+
+  categoriasFiltradas = computed(() => {
+    const tipo = this.filtroTipo();
+
+    if (tipo === 'TODOS') {
+      return this.categorias();
+    }
+
+    return this.categorias().filter(
+      categoria => categoria.tipo === tipo
+    );
+  });
+  
+  alterarFiltro(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.filtroTipo.set(
+      select.value as 'TODOS' | 'RECEITA' | 'DESPESA'
+    );
+  }
+
 }
